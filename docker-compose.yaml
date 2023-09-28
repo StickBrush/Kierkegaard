@@ -1,0 +1,155 @@
+version: '3'
+services:
+  db:
+    image: emoro/dbaas:latest
+    networks:
+      ric:
+        ipv4_address: 10.0.2.12
+    container_name: db
+
+  e2rtmansim:
+    image: emoro/e2rtmansim:latest
+    networks:
+      ric:
+        ipv4_address: 10.0.2.15
+    container_name: e2rtmansim
+
+  e2mgr:
+    image: emoro/e2mgr:latest
+    networks:
+      ric:
+        ipv4_address: 10.0.2.11
+    environment:
+      - RIC_ID=7b0000-000000/18
+      - DBAAS_PORT_6379_TCP_ADDR=10.0.2.12
+      - DBAAS_PORT_6379_TCP_PORT=6379
+      - DBAAS_SERVICE_HOST=10.0.2.12
+      - DBAAS_SERCE_PORT=6379
+    volumes:
+      - ./ric_routes.txt:/opt/E2Manager/router.txt:ro
+    container_name: e2mgr
+
+  e2term:
+    image: emoro/e2term:latest
+    networks:
+      ric:
+        ipv4_address: 10.0.2.10
+    depends_on:
+      - e2mgr
+    environment:
+      - local-ip=10.0.2.10
+      - trace=start
+      - external-fqdn=e2t.com
+      - POD_NAME=E2TERM_POD
+      - sctp-port=36422
+    volumes:
+      - ./e2term_config.conf:/opt/e2/config/config.conf:ro
+      - ./ric_routes.txt:/opt/e2/dockerRouter.txt:ro
+    container_name: e2term
+  
+  #xapp:
+  #  #image: emoro/xapp:latest
+  #  build: ./xapp_kai
+  #  depends_on:
+  #    - e2term
+  #  networks:
+  #    ric:
+  #      ipv4_address: 10.0.2.24
+  #  environment:
+  #    - DBAAS_SERVICE_HOST=10.0.2.12
+  #    - DBAAS_SERVICE_PORT=6379
+  #  volumes:
+  #    - ./xapp_routes.txt:/python_xapp/routes.txt:ro
+  #  container_name: xapp
+
+  xapp:
+    build: 
+      context: "coloran-xapp"
+      args:
+        DBAAS_SERVICE_HOST: "10.0.2.12"
+        DBAAS_SERVICE_PORT: 6379
+    depends_on:
+      - e2term
+    networks:
+      ric:
+        ipv4_address: 10.0.2.24
+    environment:
+      - DBAAS_SERVICE_HOST=10.0.2.12
+      - DBAAS_SERVICE_PORT=6379
+    container_name: xapp
+    entrypoint: ["bash"]
+    working_dir: "/home/sample-xapp"
+    command: ./run_xapp.sh
+
+  #gnb:
+  #  image: emoro/gnb_emu:latest
+  #  networks:
+  #    ric:
+  #      ipv4_address: 10.0.2.40
+  #  container_name: gnb
+  
+  telegraf:
+    image: telegraf:1.18-alpine
+    volumes:
+    - ./telegraf/etc/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    depends_on:
+      - influxdb
+    networks:
+      ric:
+        ipv4_address: 10.0.2.51
+    links:
+      - influxdb
+    ports:
+    - '127.0.0.1:8125:8125/udp'
+
+  influxdb:
+    image: influxdb:1.8-alpine
+    env_file: configuration.env
+    ports:
+      - '127.0.0.1:8086:8086'
+    command: sh -c "influxd & sleep 10 && influx -database influx -execute 'delete from /\w*/'; tail -f /dev/null"
+    volumes:
+      - ./:/imports
+      - influxdb_data:/var/lib/influxdb
+
+  grafana:
+    image: grafana/grafana:8.0.2
+    depends_on:
+      - influxdb
+    env_file: configuration.env
+    links:
+      - influxdb
+    ports:
+      - '3000:3000'
+    command: sh -c "echo \"1,2,3\" > provacsv.csv"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+      - ./grafana/dashboards/:/var/lib/grafana/dashboards/
+  
+  ns3:
+    build: ./statsd_ns3
+    stdin_open: true
+    tty: true
+    networks:
+      ric:
+        ipv4_address: 10.0.2.50
+    #network_mode: "host"
+    depends_on:
+      - telegraf
+    entrypoint: ["./waf"]
+    working_dir: "/workspace/ns3-mmwave-oran"
+    command: ["--run", "scratch/scenario-zero.cc --e2TermIp=10.0.2.10"]
+
+networks:
+  ric:
+    name: ric
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.0.2.0/24
+
+volumes:
+  grafana_data: {}
+  influxdb_data: {}

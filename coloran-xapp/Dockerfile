@@ -127,6 +127,5 @@ RUN apt-get update  \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
-RUN sed -i "s/^export GNB_ID.*/export GNB_ID=ns-o-ran/g" /home/xapp-sm-connector/build_xapp.sh
 RUN sed -i "s/^export XAPP_ID.*/export XAPP_ID=24/g" /home/xapp-sm-connector/build_xapp.sh
 RUN /home/xapp-sm-connector/build_xapp.sh clean

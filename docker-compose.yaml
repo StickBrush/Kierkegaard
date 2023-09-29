@@ -76,10 +76,10 @@ services:
     environment:
       - DBAAS_SERVICE_HOST=10.0.2.12
       - DBAAS_SERVICE_PORT=6379
-    container_name: xapp
     entrypoint: ["bash"]
     working_dir: "/home/sample-xapp"
     command: ./run_xapp.sh
+    container_name: "sample-xapp-24"
 
   #gnb:
   #  image: emoro/gnb_emu:latest
